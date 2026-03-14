@@ -145,8 +145,18 @@ class StealthOverlay:
         self.root.after(0, _insert)
 
     def close(self):
-        self.root.quit()
-        self.root.destroy()
+        try:
+            self.root.quit()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _keep_alive(self):
+        """Prevent macOS beachball by keeping the event loop ticking."""
+        self.root.after(50, self._keep_alive)
 
     def run(self):
         import subprocess
@@ -154,4 +164,6 @@ class StealthOverlay:
             ["osascript", "-e", 'tell application "Python" to activate'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self._keep_alive()
         self.root.mainloop()

@@ -26,6 +26,7 @@ RATE = 16000
 SILENCE_RMS_THRESHOLD = 100   # audio level to consider as silence
 SILENCE_SECONDS = 1.5         # seconds of silence before processing
 MIN_SPEECH_SECONDS = 0.5      # minimum audio length to bother transcribing
+INTERIM_INTERVAL = 3.0        # seconds between live interim transcriptions
 
 
 def rms(data: bytes) -> float:
@@ -53,6 +54,8 @@ class MainOrchestratorMacOS:
         self.speech_frames: List[bytes] = []
         self.silence_start: Optional[float] = None
         self.is_speaking = False
+        self.last_interim_time: Optional[float] = None
+        self.interim_running = False
 
         self.loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -170,7 +173,16 @@ class MainOrchestratorMacOS:
                     self.silence_start = None
                     if not self.is_speaking:
                         self.is_speaking = True
-                        self.overlay.update_status("Listening... 🎤")
+                        self.last_interim_time = time.time()
+                        self.overlay.update_status("🎤 Speaking...")
+                    else:
+                        # Trigger interim transcription every INTERIM_INTERVAL seconds
+                        if (not self.interim_running and
+                                self.last_interim_time and
+                                time.time() - self.last_interim_time >= INTERIM_INTERVAL and
+                                len(self.speech_frames) > 0):
+                            self.last_interim_time = time.time()
+                            asyncio.create_task(self._process_interim(self.speech_frames[:]))
                 else:
                     # Silence
                     if self.is_speaking:
@@ -252,6 +264,27 @@ class MainOrchestratorMacOS:
             import traceback; traceback.print_exc()
             self.overlay.add_transcript("system", f"\n❌ Error: {e}\n")
             self.overlay.update_status("Listening...")
+
+    async def _process_interim(self, frames: List[bytes]):
+        self.interim_running = True
+        try:
+            buf = io.BytesIO()
+            with wave.open(buf, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(RATE)
+                wf.writeframes(b''.join(frames))
+            wav_bytes = buf.getvalue()
+
+            loop = asyncio.get_event_loop()
+            transcript = await loop.run_in_executor(None, self._whisper_transcribe, wav_bytes)
+
+            if transcript and len(transcript.strip()) >= Config.MIN_QUERY_LENGTH:
+                self.overlay.add_transcript("live", f"⏳ [live] {transcript}\n")
+        except Exception as e:
+            print(f"Interim error: {e}")
+        finally:
+            self.interim_running = False
 
     def _whisper_transcribe(self, wav_bytes: bytes) -> str:
         try:
