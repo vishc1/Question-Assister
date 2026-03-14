@@ -230,20 +230,21 @@ class MainOrchestratorMacOS:
                 return
 
             self.stats["transcripts"] += 1
-            self.overlay.add_transcript("mic", f"[YOU] {transcript}\n")
 
             # Get context + generate response
             self.stats["queries"] += 1
             self.overlay.add_transcript("system",
-                f"\n{'=' * 38}\n🔍 QUESTION DETECTED\n{'=' * 38}\n"
-                f"Q: {transcript}\n"
+                f"\n{'─' * 38}\n"
+                f"❓ INTERVIEWER\n"
+                f"{'─' * 38}\n"
+                f"{transcript}\n"
             )
 
             context = await loop.run_in_executor(
                 None, self._get_context, transcript
             )
 
-            self.overlay.update_status("Generating response...")
+            self.overlay.update_status("Generating answer...")
             response = await loop.run_in_executor(
                 None, self.response_generator.generate_response, transcript, context
             )
@@ -251,11 +252,11 @@ class MainOrchestratorMacOS:
             if response:
                 self.stats["responses"] += 1
                 self.overlay.add_transcript("system",
-                    f"\n{'=' * 38}\n💡 SUGGESTED RESPONSES\n{'=' * 38}\n"
+                    f"\n💬 SAY THIS:\n"
                 )
-                for i, r in enumerate(response, 1):
-                    self.overlay.add_transcript("mic", f"{i}. {r}\n")
-                self.overlay.add_transcript("system", "=" * 38 + "\n\n")
+                for r in response:
+                    self.overlay.add_transcript("mic", f"  • {r}\n")
+                self.overlay.add_transcript("system", f"{'─' * 38}\n\n")
 
             self.overlay.update_status("Listening...")
 

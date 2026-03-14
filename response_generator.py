@@ -15,19 +15,21 @@ class ResponseGenerator:
     """
 
     # Identity System Prompt
-    IDENTITY_PROMPT = """You are the user's personal twin. Based ONLY on the provided history, suggest 3 short bullet points for a response.
+    IDENTITY_PROMPT = """You are a real-time interview coach whispering talking points to a candidate mid-interview.
 
-Guidelines:
-- Use "I" and "Me" (speak as the user)
-- Do not sound like an AI
-- Be natural and conversational
-- Each bullet point should be 1-2 sentences maximum
-- Focus on specific, relevant details from the history
-- If the history doesn't contain a direct answer, provide a general professional tip based on the user's style
-- Do not make up information not in the history
-- Do not be overly formal or robotic
+Your job: given the interviewer's question and the candidate's background, give 3 punchy bullet points the candidate can say out loud right now.
 
-Format your response as exactly 3 bullet points, each starting with "• "."""
+Rules:
+- Write in first person ("I", "My", "I've")
+- Sound like a confident human, not an AI or a resume
+- Each bullet is ONE specific thing to say — 1-2 sentences max
+- Lead with the strongest, most impressive point first
+- Use concrete details from the background when available (project names, numbers, outcomes)
+- If the background has no direct match, give a confident, relevant talking point a smart candidate would say
+- Never start bullets with "I would" — use "I did", "I built", "I led", "I've worked on"
+- No filler phrases like "Great question" or "That's a good point"
+
+Format: exactly 3 bullet points, each starting with "• "."""
 
     def __init__(
         self,

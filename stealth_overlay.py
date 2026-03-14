@@ -149,10 +149,8 @@ class StealthOverlay:
             self.root.quit()
         except Exception:
             pass
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
+        import os
+        os._exit(0)
 
     def _keep_alive(self):
         """Prevent macOS beachball by keeping the event loop ticking."""
