@@ -156,8 +156,8 @@ class StealthOverlay:
         self.root.after(0, _insert)
 
     def open_docs(self):
-        import subprocess
-        subprocess.Popen(["open", "http://localhost:5001"])
+        import webbrowser
+        webbrowser.open_new_tab("http://localhost:5001")
 
     def close(self):
         try:
