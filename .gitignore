@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+recordings/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Project specific
+config.json
+secrets.json
+*.db
+
+# RAG Pipeline
+.env
+identity/
+vector_store/
+*.index
+*.faiss
