@@ -99,6 +99,10 @@ class MainOrchestratorMacOS:
             self.response_generator = ResponseGenerator()
             print("✓ Response generator ready")
 
+            print("Starting upload server...")
+            self._start_upload_server()
+            print("✓ Upload server at http://localhost:5001")
+
             print("\n✓ INITIALIZATION COMPLETE\n")
             return True
 
@@ -106,6 +110,17 @@ class MainOrchestratorMacOS:
             print(f"✗ Init error: {e}")
             import traceback; traceback.print_exc()
             return False
+
+    def _start_upload_server(self):
+        import threading
+        from upload_server import app as flask_app
+        t = threading.Thread(
+            target=lambda: flask_app.run(
+                host="127.0.0.1", port=5001, debug=False, use_reloader=False
+            ),
+            daemon=True
+        )
+        t.start()
 
     def start(self):
         self.overlay.add_transcript("system",

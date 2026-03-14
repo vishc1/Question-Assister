@@ -67,6 +67,17 @@ class StealthOverlay:
             command=self.close
         ).pack(side="right", padx=6, pady=4)
 
+        ctk.CTkButton(
+            self.title_bar,
+            text="📁 Docs",
+            width=60,
+            height=24,
+            fg_color="#2a4a2a",
+            hover_color="#1a6a1a",
+            corner_radius=6,
+            command=self.open_docs
+        ).pack(side="right", padx=2, pady=4)
+
         # Status bar
         status_frame = ctk.CTkFrame(main_frame, fg_color="#2b2b2b", corner_radius=8)
         status_frame.pack(fill="x", padx=6, pady=(0, 4))
@@ -143,6 +154,10 @@ class StealthOverlay:
             self.transcript_box.see("end")
             self.transcript_box.configure(state="disabled")
         self.root.after(0, _insert)
+
+    def open_docs(self):
+        import subprocess
+        subprocess.Popen(["open", "http://localhost:5001"])
 
     def close(self):
         try:
