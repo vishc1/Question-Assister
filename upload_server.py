@@ -370,11 +370,7 @@ async function resetSetup(e){e.preventDefault();await fetch('/api/reset-setup',{
 
 @app.route("/")
 def index():
-    from flask import redirect
-    cfg = get_session_config()
-    if cfg and cfg.get("setup_complete"):
-        return redirect("/interview")
-    return render_template_string(SETUP_HTML)
+    return render_template_string(INTERVIEW_HTML)
 
 
 @app.route("/interview")
@@ -461,6 +457,26 @@ HTML = """
 <body>
 <h1>Question Assister</h1>
 <p class="subtitle">Upload documents to your identity knowledge base</p>
+
+<div class="card">
+  <h2>Session Setup <span style="font-size:0.75rem;color:#555;font-weight:400;text-transform:none;letter-spacing:0">— optional</span></h2>
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div>
+      <label style="font-size:0.8rem;color:#888;margin-bottom:4px;display:block;">What is this interview for?</label>
+      <input id="s_role" type="text" placeholder="e.g. Software Engineering internship at Google" style="width:100%;background:#0f0f0f;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:0.88rem;outline:none;">
+    </div>
+    <div>
+      <label style="font-size:0.8rem;color:#888;margin-bottom:4px;display:block;">Portfolio / LinkedIn URL</label>
+      <input id="s_portfolio" type="text" placeholder="https://linkedin.com/in/yourname" style="width:100%;background:#0f0f0f;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:0.88rem;outline:none;">
+    </div>
+    <div>
+      <label style="font-size:0.8rem;color:#888;margin-bottom:4px;display:block;">GitHub URL</label>
+      <input id="s_github" type="text" placeholder="https://github.com/yourusername" style="width:100%;background:#0f0f0f;border:1px solid #222;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:0.88rem;outline:none;">
+    </div>
+    <button class="btn btn-primary" onclick="saveSetup()">Save &amp; Build Index</button>
+  </div>
+  <div id="setupStatus"></div>
+</div>
 
 <div class="card">
   <h2>Upload Documents</h2>
@@ -576,6 +592,41 @@ document.getElementById('fileInput').addEventListener('change', e => {
 });
 
 loadFiles();
+
+// Pre-populate session setup fields
+fetch('/api/session-config').then(r=>r.json()).then(cfg=>{
+  if(cfg.interview_for) document.getElementById('s_role').value=cfg.interview_for;
+  if(cfg.portfolio_url) document.getElementById('s_portfolio').value=cfg.portfolio_url;
+  if(cfg.github_url) document.getElementById('s_github').value=cfg.github_url;
+});
+
+async function saveSetup() {
+  const statusEl = document.getElementById('setupStatus');
+  const logEl = document.getElementById('log');
+  statusEl.innerHTML = '';
+  logEl.textContent = 'Setting up session...\\n';
+  const body = {
+    interview_for: document.getElementById('s_role').value.trim(),
+    portfolio_url: document.getElementById('s_portfolio').value.trim(),
+    github_url: document.getElementById('s_github').value.trim()
+  };
+  const res = await fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
+  while(true) {
+    const {done,value} = await reader.read(); if(done) break;
+    buf += dec.decode(value);
+    const lines = buf.split('\\n'); buf = lines.pop();
+    for(const line of lines) {
+      if(!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim(); if(!raw) continue;
+      try {
+        const ev = JSON.parse(raw);
+        if(ev.type==='progress') { logEl.textContent += ev.text+'\\n'; logEl.scrollTop=logEl.scrollHeight; }
+        if(ev.type==='done') { statusEl.innerHTML='<div class="status-msg status-ok">Setup complete! Session is ready.</div>'; }
+      } catch(e){}
+    }
+  }
+}
 </script>
 </body>
 </html>
@@ -663,6 +714,11 @@ def api_setup():
     from flask import Response
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/session-config")
+def session_config():
+    return jsonify(get_session_config() or {})
 
 
 @app.route("/api/reset-setup", methods=["POST"])
