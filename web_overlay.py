@@ -49,11 +49,19 @@ class WebOverlay:
 
     def run(self):
         def _open():
+            import subprocess
+            import os
             time.sleep(2.0)
-            try:
-                b = webbrowser.get("google-chrome")
-                b.open("http://localhost:5001")
-            except Exception:
+            chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            if os.path.exists(chrome):
+                # --app mode: frameless standalone window, no tabs, stays on top of tab switches
+                subprocess.Popen([
+                    chrome,
+                    "--app=http://localhost:5001",
+                    "--window-size=420,700",
+                    "--window-position=1020,60",
+                ])
+            else:
                 webbrowser.open_new_tab("http://localhost:5001")
 
         threading.Thread(target=_open, daemon=True).start()

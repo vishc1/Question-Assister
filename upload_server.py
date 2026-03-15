@@ -46,7 +46,9 @@ INTERVIEW_HTML = """<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.header{background:#141414;border-bottom:1px solid #1e1e1e;padding:0 20px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+/* draggable title bar for app-mode window */
+.header{background:#141414;border-bottom:1px solid #1e1e1e;padding:0 14px;height:44px;display:flex;align-items:center;gap:10px;flex-shrink:0;-webkit-app-region:drag;user-select:none}
+.header *{-webkit-app-region:no-drag}
 .logo{font-weight:700;font-size:.95rem;color:#fff}
 .spacer{flex:1}
 .status-pill{font-size:.75rem;padding:4px 12px;border-radius:20px;background:#1e1e1e;color:#888;border:1px solid #2a2a2a;transition:all .3s}
