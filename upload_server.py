@@ -15,6 +15,10 @@ import queue as _queue
 import threading as _threading
 
 from config import Config
+import re
+import subprocess as _subprocess
+import urllib.request
+from html.parser import HTMLParser
 
 app = Flask(__name__)
 
@@ -35,7 +39,217 @@ def broadcast_event(event_type, data):
             except Exception:
                 pass
 
+SESSION_CONFIG_PATH = Config.IDENTITY_DIR.parent / "identity" / "session_config.json"
+
+
+def get_session_config():
+    p = Path(__file__).parent / "identity" / "session_config.json"
+    if p.exists():
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def save_session_config(cfg):
+    p = Path(__file__).parent / "identity" / "session_config.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._parts = []
+        self._skip = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "nav", "footer", "head"):
+            self._skip = True
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "nav", "footer", "head"):
+            self._skip = False
+
+    def handle_data(self, data):
+        if not self._skip:
+            d = data.strip()
+            if d:
+                self._parts.append(d)
+
+    def get_text(self):
+        return "\n".join(self._parts)
+
+
+def _strip_html(html):
+    p = _TextExtractor()
+    try:
+        p.feed(html)
+    except Exception:
+        pass
+    return p.get_text()
+
+
+def _fetch_url(url):
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        return _strip_html(html)[:6000]
+    except Exception as e:
+        return f"Could not fetch URL: {e}"
+
+
+def _fetch_github(github_url):
+    m = re.match(r"https?://github\.com/([^/\s]+)(?:/([^/\s]+))?", github_url.strip())
+    if not m:
+        return "Invalid GitHub URL"
+    username, repo_name = m.group(1), m.group(2)
+    parts = [f"GitHub profile: {username}"]
+    try:
+        if repo_name:
+            repos_to_fetch = [(username, repo_name)]
+        else:
+            api = f"https://api.github.com/users/{username}/repos?sort=updated&per_page=12"
+            req = urllib.request.Request(api, headers={"User-Agent": "Interview-Assistant/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                repos = json.loads(resp.read())
+            repos_to_fetch = [(username, r["name"]) for r in repos[:8] if not r.get("fork")]
+            for r in repos[:10]:
+                desc = r.get("description") or ""
+                stars = r.get("stargazers_count", 0)
+                lang = r.get("language") or ""
+                parts.append(f"Repo: {r['name']} ({lang}, ★{stars}) — {desc}")
+        for uname, rname in repos_to_fetch[:6]:
+            for branch in ("main", "master"):
+                try:
+                    raw = f"https://raw.githubusercontent.com/{uname}/{rname}/{branch}/README.md"
+                    req = urllib.request.Request(raw, headers={"User-Agent": "Interview-Assistant/1.0"})
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        readme = resp.read().decode("utf-8", errors="ignore")[:1500]
+                    parts.append(f"\n--- {rname} README ---\n{readme}")
+                    break
+                except Exception:
+                    pass
+    except Exception as e:
+        parts.append(f"GitHub fetch error: {e}")
+    return "\n".join(parts)[:7000]
+
+
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".json", ".txt"}
+
+SETUP_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interview Assistant — Setup</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e0e0e0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#141414;border:1px solid #1e1e1e;border-radius:16px;padding:32px;width:100%;max-width:400px}
+.logo{font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px}
+.sub{font-size:.82rem;color:#555;margin-bottom:28px}
+label{display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#555;margin-bottom:6px}
+input{width:100%;background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:.88rem;outline:none;transition:border-color .2s;margin-bottom:18px;font-family:inherit}
+input:focus{border-color:#4f8ef7}
+input::placeholder{color:#333}
+.hint{font-size:.72rem;color:#444;margin-top:-14px;margin-bottom:16px}
+.btn{width:100%;padding:12px;background:#4f8ef7;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:6px}
+.btn:hover{background:#3d7de8}
+.skip{display:block;text-align:center;margin-top:14px;font-size:.78rem;color:#444;cursor:pointer;text-decoration:none}
+.skip:hover{color:#888}
+#progress-view{display:none}
+.prog-title{font-size:.88rem;color:#888;margin-bottom:16px}
+.log-item{font-size:.82rem;padding:5px 0;display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid #1a1a1a;animation:fi .2s}
+.log-item:last-child{border-bottom:none}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.log-item.ok{color:#4ade80}
+.log-item.err{color:#f87171}
+.log-item.active{color:#fbbf24}
+.spin{width:12px;height:12px;border:2px solid #333;border-top-color:#fbbf24;border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0;margin-top:1px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.ic{flex-shrink:0;width:14px;text-align:center}
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="form-view">
+    <div class="logo">🎯 Interview Assistant</div>
+    <div class="sub">Set up your profile for personalized answers</div>
+
+    <label>What is this interview for? <span style="color:#60a5fa">*</span></label>
+    <input id="f_role" placeholder="e.g. Software Engineering internship at Google" />
+
+    <label>Your Portfolio or LinkedIn URL <span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+    <input id="f_portfolio" placeholder="https://linkedin.com/in/yourname" />
+
+    <label>Your GitHub URL <span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+    <input id="f_github" placeholder="https://github.com/yourusername" />
+
+    <button class="btn" onclick="startSetup()">→ Start Session</button>
+    <a class="skip" href="/interview">Skip setup →</a>
+  </div>
+
+  <div id="progress-view">
+    <div class="prog-title" id="prog-title">Setting up your profile...</div>
+    <div id="log"></div>
+  </div>
+</div>
+<script>
+function log(text, type) {
+  const el = document.createElement('div');
+  el.className = 'log-item ' + (type||'');
+  const icon = type==='ok' ? '✓' : type==='err' ? '✗' : type==='active' ? '' : '•';
+  if (type==='active') {
+    el.innerHTML = '<div class="spin"></div><span>'+text+'</span>';
+  } else {
+    el.innerHTML = '<span class="ic">'+icon+'</span><span>'+text+'</span>';
+  }
+  // replace previous active item if exists
+  const prev = document.querySelector('.log-item.active');
+  if (prev && type !== 'active') { prev.remove(); }
+  document.getElementById('log').appendChild(el);
+}
+async function startSetup() {
+  const role = document.getElementById('f_role').value.trim();
+  if (!role) { document.getElementById('f_role').style.borderColor='#f87171'; document.getElementById('f_role').focus(); return; }
+  document.getElementById('form-view').style.display='none';
+  document.getElementById('progress-view').style.display='block';
+  const body = {
+    interview_for: role,
+    portfolio_url: document.getElementById('f_portfolio').value.trim(),
+    github_url: document.getElementById('f_github').value.trim()
+  };
+  const res = await fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
+  while(true) {
+    const {done,value} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value);
+    const lines = buf.split('\\n'); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim(); if (!raw) continue;
+      try {
+        const ev = JSON.parse(raw);
+        if (ev.type==='progress') log(ev.text, ev.status||'');
+        if (ev.type==='done') {
+          log('All set! Launching...', 'ok');
+          setTimeout(()=>{ window.location.href='/interview'; }, 700);
+        }
+      } catch(e){}
+    }
+  }
+}
+</script>
+</body>
+</html>"""
 
 INTERVIEW_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -98,6 +312,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="spacer"></div>
   <span class="status-pill" id="pill">Connecting...</span>
   <a href="/docs" class="nav-btn">📁 Docs</a>
+  <a href="/setup" class="nav-btn" onclick="resetSetup(event)">⚙ Setup</a>
   <button class="nav-btn" onclick="quit()" style="background:#2a0a0a;color:#f87171;border-color:#4a1a1a">✕ Quit</button>
 </div>
 <div class="feed" id="feed">
@@ -147,14 +362,29 @@ es.onmessage=e=>{
 };
 es.onerror=()=>{pill.textContent='Reconnecting...';pill.className='status-pill'};
 async function quit(){if(!confirm('Stop the interview assistant?'))return;await fetch('/quit',{method:'POST'});window.close()}
+async function resetSetup(e){e.preventDefault();await fetch('/api/reset-setup',{method:'POST'});window.location.href='/setup';}
 </script>
 </body>
 </html>"""
 
 
 @app.route("/")
+def index():
+    from flask import redirect
+    cfg = get_session_config()
+    if cfg and cfg.get("setup_complete"):
+        return redirect("/interview")
+    return render_template_string(SETUP_HTML)
+
+
+@app.route("/interview")
 def interview():
     return render_template_string(INTERVIEW_HTML)
+
+
+@app.route("/setup")
+def setup_page():
+    return render_template_string(SETUP_HTML)
 
 
 @app.route("/stream")
@@ -358,6 +588,89 @@ def human_size(n):
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} GB"
+
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    data = request.get_json()
+    interview_for = (data.get("interview_for") or "").strip()
+    portfolio_url = (data.get("portfolio_url") or "").strip()
+    github_url = (data.get("github_url") or "").strip()
+
+    def generate():
+        def ev(text, status="", etype="progress"):
+            return f"data: {json.dumps({'type': etype, 'text': text, 'status': status})}\n\n"
+
+        Config.ensure_directories()
+
+        # 1. Save context file
+        yield ev(f"Saving: {interview_for}", "active")
+        ctx_file = Path(__file__).parent / "identity" / "interview_context.txt"
+        with open(ctx_file, "w") as f:
+            f.write(f"Interview Target: {interview_for}\n")
+            if portfolio_url:
+                f.write(f"Portfolio URL: {portfolio_url}\n")
+            if github_url:
+                f.write(f"GitHub URL: {github_url}\n")
+        save_session_config({"interview_for": interview_for, "portfolio_url": portfolio_url,
+                             "github_url": github_url, "setup_complete": True})
+        yield ev("Interview context saved", "ok")
+
+        # 2. Portfolio
+        if portfolio_url:
+            yield ev(f"Fetching portfolio...", "active")
+            text = _fetch_url(portfolio_url)
+            if not text.startswith("Could not"):
+                pf = Path(__file__).parent / "identity" / "portfolio_web.txt"
+                with open(pf, "w") as f:
+                    f.write(f"Portfolio/LinkedIn from {portfolio_url}:\n\n{text}")
+                yield ev(f"Portfolio saved ({len(text):,} chars)", "ok")
+            else:
+                yield ev(f"Portfolio skipped — {text[:60]}", "err")
+
+        # 3. GitHub
+        if github_url:
+            yield ev("Fetching GitHub repos & READMEs...", "active")
+            text = _fetch_github(github_url)
+            if text:
+                gf = Path(__file__).parent / "identity" / "github_profile.txt"
+                with open(gf, "w") as f:
+                    f.write(f"GitHub data from {github_url}:\n\n{text}")
+                yield ev(f"GitHub data saved ({len(text):,} chars)", "ok")
+            else:
+                yield ev("GitHub fetch returned nothing", "err")
+
+        # 4. Build RAG
+        yield ev("Building RAG index...", "active")
+        script = Path(__file__).parent / "rag_pipeline.py"
+        proc = subprocess.Popen(
+            [sys.executable, str(script), "build", "--force"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, cwd=str(Path(__file__).parent),
+        )
+        for line in proc.stdout:
+            line = line.strip()
+            if line and ("✓" in line or "Loaded" in line or "Built" in line):
+                yield ev(line, "ok")
+        proc.wait()
+        if proc.returncode == 0:
+            yield ev("RAG index ready", "ok")
+        else:
+            yield ev("RAG build had issues — rebuild in /docs if needed", "err")
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    from flask import Response
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/reset-setup", methods=["POST"])
+def reset_setup():
+    p = Path(__file__).parent / "identity" / "session_config.json"
+    if p.exists():
+        p.unlink()
+    return jsonify({"ok": True})
 
 
 @app.route("/quit", methods=["POST"])

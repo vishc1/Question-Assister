@@ -95,7 +95,7 @@ Format: exactly 3 bullet points, each starting with "• "."""
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.IDENTITY_PROMPT},
+                    {"role": "system", "content": self._build_system_prompt()},
                     {"role": "user", "content": user_message}
                 ],
                 temperature=0.7,
@@ -117,6 +117,22 @@ Format: exactly 3 bullet points, each starting with "• "."""
             print(f"✗ Error generating response: {e}")
             self.stats["errors"] += 1
             return None
+
+    def _build_system_prompt(self) -> str:
+        """Build system prompt, prepending interview context if available."""
+        try:
+            from pathlib import Path
+            cfg_path = Path(__file__).parent / "identity" / "session_config.json"
+            if cfg_path.exists():
+                import json as _json
+                with open(cfg_path) as f:
+                    cfg = _json.load(f)
+                interview_for = cfg.get("interview_for", "")
+                if interview_for:
+                    return f"This candidate is interviewing for: {interview_for}\n\n{self.IDENTITY_PROMPT}"
+        except Exception:
+            pass
+        return self.IDENTITY_PROMPT
 
     def _format_context(self, context: List[Dict]) -> str:
         """Format context items into readable text"""
