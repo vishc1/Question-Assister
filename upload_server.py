@@ -98,6 +98,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="spacer"></div>
   <span class="status-pill" id="pill">Connecting...</span>
   <a href="/docs" class="nav-btn">📁 Docs</a>
+  <button class="nav-btn" onclick="quit()" style="background:#2a0a0a;color:#f87171;border-color:#4a1a1a">✕ Quit</button>
 </div>
 <div class="feed" id="feed">
   <div class="welcome" id="welcome">
@@ -145,6 +146,7 @@ es.onmessage=e=>{
   }
 };
 es.onerror=()=>{pill.textContent='Reconnecting...';pill.className='status-pill'};
+async function quit(){if(!confirm('Stop the interview assistant?'))return;await fetch('/quit',{method:'POST'});window.close()}
 </script>
 </body>
 </html>"""
@@ -356,6 +358,12 @@ def human_size(n):
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} GB"
+
+
+@app.route("/quit", methods=["POST"])
+def quit_app():
+    import os
+    os._exit(0)
 
 
 @app.route("/docs")
