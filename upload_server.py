@@ -10,12 +10,176 @@ import sys
 import threading
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string
+import json
+import queue as _queue
+import threading as _threading
 
 from config import Config
 
 app = Flask(__name__)
 
+# SSE broadcast infrastructure
+_sse_clients = []
+_sse_lock = _threading.Lock()
+_sse_history = []
+
+def broadcast_event(event_type, data):
+    msg = json.dumps({"type": event_type, "data": data})
+    _sse_history.append(msg)
+    if len(_sse_history) > 300:
+        _sse_history.pop(0)
+    with _sse_lock:
+        for q in list(_sse_clients):
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                pass
+
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".json", ".txt"}
+
+INTERVIEW_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interview Assistant</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{background:#141414;border-bottom:1px solid #1e1e1e;padding:0 20px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.logo{font-weight:700;font-size:.95rem;color:#fff}
+.spacer{flex:1}
+.status-pill{font-size:.75rem;padding:4px 12px;border-radius:20px;background:#1e1e1e;color:#888;border:1px solid #2a2a2a;transition:all .3s}
+.status-pill.listening{color:#22c55e;border-color:#166534;background:#0a1a0a}
+.status-pill.speaking{color:#f59e0b;border-color:#92400e;background:#1a1000}
+.status-pill.processing{color:#60a5fa;border-color:#1e40af;background:#0a0f1e}
+.mic-dot{width:9px;height:9px;border-radius:50%;background:#333;transition:background .3s;flex-shrink:0}
+.mic-dot.active{background:#22c55e}
+.mic-dot.speaking{background:#f59e0b;animation:pulse .6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.nav-btn{font-size:.75rem;padding:5px 12px;border-radius:6px;background:#1e1e1e;color:#888;text-decoration:none;border:1px solid #2a2a2a}
+.nav-btn:hover{background:#2a2a2a;color:#ccc}
+.feed{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.feed::-webkit-scrollbar{width:3px}
+.feed::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:#333;text-align:center;padding:60px 20px;pointer-events:none}
+.welcome .icon{font-size:2.5rem;margin-bottom:8px}
+.welcome h2{font-size:1rem;color:#444;font-weight:500}
+.welcome p{font-size:.82rem;color:#333}
+.qa-card{background:#141414;border:1px solid #1e1e1e;border-radius:12px;overflow:hidden;animation:slideIn .2s ease-out}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.qa-q{padding:14px 16px;border-bottom:1px solid #1e1e1e}
+.qa-a{padding:14px 16px}
+.qa-lbl{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}
+.qa-lbl.ql{color:#60a5fa}
+.qa-lbl.al{color:#22c55e}
+.qa-q-text{font-size:.92rem;color:#e0e0e0;line-height:1.5}
+.answer-row{display:flex;gap:10px;padding:5px 0;font-size:.86rem;line-height:1.5;color:#d0d0d0;border-bottom:1px solid #1a1a1a;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.answer-row:last-child{border-bottom:none}
+.adot{color:#22c55e;flex-shrink:0;margin-top:1px}
+.generating{display:flex;align-items:center;gap:8px;color:#444;font-size:.8rem;padding:4px 0}
+.dots span{display:inline-block;width:5px;height:5px;background:#555;border-radius:50%;margin:0 1px;animation:bounce 1s infinite}
+.dots span:nth-child(2){animation-delay:.15s}
+.dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+.live-bar{flex-shrink:0;margin:0 20px 12px;background:#0f0f00;border:1px solid #2a2a00;border-radius:8px;padding:10px 14px;display:none}
+.live-bar.on{display:block}
+.live-lbl{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#854d0e;margin-bottom:3px}
+.live-text{font-size:.85rem;color:#fbbf24}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="mic-dot" id="mic"></div>
+  <span class="logo">🎯 Interview Assistant</span>
+  <div class="spacer"></div>
+  <span class="status-pill" id="pill">Connecting...</span>
+  <a href="/docs" class="nav-btn">📁 Docs</a>
+</div>
+<div class="feed" id="feed">
+  <div class="welcome" id="welcome">
+    <div class="icon">🎤</div>
+    <h2>Ready to assist</h2>
+    <p>Start speaking — your interview coach is listening</p>
+  </div>
+</div>
+<div class="live-bar" id="liveBar">
+  <div class="live-lbl">🎤 Live</div>
+  <div class="live-text" id="liveText"></div>
+</div>
+<script>
+const feed=document.getElementById('feed'),pill=document.getElementById('pill'),mic=document.getElementById('mic'),liveBar=document.getElementById('liveBar'),liveText=document.getElementById('liveText');
+let card=null;
+function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML}
+function scroll(){feed.scrollTop=feed.scrollHeight}
+function rmWelcome(){const w=document.getElementById('welcome');if(w)w.remove()}
+const es=new EventSource('/stream');
+es.onmessage=e=>{
+  const{type,data}=JSON.parse(e.data);
+  if(type==='status'){
+    pill.textContent=data;
+    pill.className='status-pill';
+    const d=data.toLowerCase();
+    if(d.includes('listening'))pill.classList.add('listening');
+    else if(d.includes('speaking'))pill.classList.add('speaking');
+    else if(d.includes('transcrib')||d.includes('generat')||d.includes('processing'))pill.classList.add('processing');
+  }
+  if(type==='mic'){mic.className='mic-dot'+(data?' active':'')}
+  if(type==='speaking'){mic.className='mic-dot speaking'}
+  if(type==='live'){liveBar.classList.add('on');liveText.textContent=data}
+  if(type==='question'){
+    liveBar.classList.remove('on');liveText.textContent='';rmWelcome();
+    card=document.createElement('div');card.className='qa-card';
+    card.innerHTML=`<div class="qa-q"><div class="qa-lbl ql">❓ Interviewer</div><div class="qa-q-text">${esc(data)}</div></div><div class="qa-a"><div class="qa-lbl al">💬 Say this</div><div class="generating"><div class="dots"><span></span><span></span><span></span></div>Generating...</div></div>`;
+    feed.appendChild(card);scroll();
+  }
+  if(type==='answer'&&card){
+    const gen=card.querySelector('.generating');if(gen)gen.remove();
+    const a=card.querySelector('.qa-a');
+    const row=document.createElement('div');row.className='answer-row';
+    row.innerHTML=`<span class="adot">•</span><span>${esc(data)}</span>`;
+    a.appendChild(row);scroll();
+  }
+};
+es.onerror=()=>{pill.textContent='Reconnecting...';pill.className='status-pill'};
+</script>
+</body>
+</html>"""
+
+
+@app.route("/")
+def interview():
+    return render_template_string(INTERVIEW_HTML)
+
+
+@app.route("/stream")
+def sse_stream():
+    def generate():
+        client_q = _queue.Queue()
+        with _sse_lock:
+            _sse_clients.append(client_q)
+        for msg in list(_sse_history):
+            yield f"data: {msg}\n\n"
+        try:
+            while True:
+                try:
+                    msg = client_q.get(timeout=20)
+                    yield f"data: {msg}\n\n"
+                except _queue.Empty:
+                    yield ": ping\n\n"
+        finally:
+            with _sse_lock:
+                if client_q in _sse_clients:
+                    _sse_clients.remove(client_q)
+
+    from flask import Response
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
 
 HTML = """
 <!DOCTYPE html>
@@ -192,8 +356,8 @@ def human_size(n):
     return f"{n:.1f} GB"
 
 
-@app.route("/")
-def index():
+@app.route("/docs")
+def docs_page():
     return render_template_string(HTML)
 
 

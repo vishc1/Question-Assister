@@ -15,7 +15,7 @@ from typing import Optional, List, Dict
 import pyaudio
 import openai
 
-from stealth_overlay import StealthOverlay
+from web_overlay import WebOverlay
 from rag_pipeline import RAGPipeline
 from response_generator import ResponseGenerator
 from config import Config
@@ -41,7 +41,7 @@ def rms(data: bytes) -> float:
 class MainOrchestratorMacOS:
 
     def __init__(self):
-        self.overlay: Optional[StealthOverlay] = None
+        self.overlay: Optional[WebOverlay] = None
         self.audio: Optional[pyaudio.PyAudio] = None
         self.audio_stream = None
         self.rag: Optional[RAGPipeline] = None
@@ -79,7 +79,7 @@ class MainOrchestratorMacOS:
             self.openai_client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
 
             print("Initializing overlay...")
-            self.overlay = StealthOverlay(width=500, height=700)
+            self.overlay = WebOverlay()
             self.overlay.update_status("Initializing...")
             print("✓ Overlay ready")
 
@@ -248,12 +248,7 @@ class MainOrchestratorMacOS:
 
             # Get context + generate response
             self.stats["queries"] += 1
-            self.overlay.add_transcript("system",
-                f"\n{'─' * 38}\n"
-                f"❓ INTERVIEWER\n"
-                f"{'─' * 38}\n"
-                f"{transcript}\n"
-            )
+            self.overlay.show_question(transcript)
 
             context = await loop.run_in_executor(
                 None, self._get_context, transcript
@@ -266,12 +261,8 @@ class MainOrchestratorMacOS:
 
             if response:
                 self.stats["responses"] += 1
-                self.overlay.add_transcript("system",
-                    f"\n💬 SAY THIS:\n"
-                )
                 for r in response:
-                    self.overlay.add_transcript("mic", f"  • {r}\n")
-                self.overlay.add_transcript("system", f"{'─' * 38}\n\n")
+                    self.overlay.show_answer_bullet(r)
 
             self.overlay.update_status("Listening...")
 
@@ -296,7 +287,7 @@ class MainOrchestratorMacOS:
             transcript = await loop.run_in_executor(None, self._whisper_transcribe, wav_bytes)
 
             if transcript and len(transcript.strip()) >= Config.MIN_QUERY_LENGTH:
-                self.overlay.add_transcript("live", f"⏳ [live] {transcript}\n")
+                self.overlay.show_live(transcript)
         except Exception as e:
             print(f"Interim error: {e}")
         finally:
