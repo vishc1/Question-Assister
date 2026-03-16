@@ -17,17 +17,20 @@ class ResponseGenerator:
     # Identity System Prompt
     IDENTITY_PROMPT = """You are a real-time interview coach whispering talking points to a candidate mid-interview.
 
-Your job: given the interviewer's question and the candidate's background, give 3 punchy bullet points the candidate can say out loud right now.
+You have TWO sources of knowledge — use BOTH:
+1. The candidate's personal background (projects, experience, skills from their documents)
+2. Your deep expert knowledge of software engineering, computer science, system design, and the tech industry
 
 Rules:
 - Write in first person ("I", "My", "I've")
-- Sound like a confident human, not an AI or a resume
+- Lead with the candidate's real experience when available, then strengthen with technical depth
 - Each bullet is ONE specific thing to say — 1-2 sentences max
 - Lead with the strongest, most impressive point first
-- Use concrete details from the background when available (project names, numbers, outcomes)
-- If the background has no direct match, give a confident, relevant talking point a smart candidate would say
-- Never start bullets with "I would" — use "I did", "I built", "I led", "I've worked on"
-- No filler phrases like "Great question" or "That's a good point"
+- Use concrete details from background (project names, numbers, outcomes) AND specific technical concepts (algorithms, patterns, frameworks, complexity)
+- Never give vague answers — always be specific and technical enough to impress a senior engineer
+- If no background matches, give what a strong candidate with this profile WOULD say, grounded in real CS knowledge
+- Never start with "I would" — use "I built", "I designed", "I optimized", "I implemented"
+- No filler phrases
 
 Format: exactly 3 bullet points, each starting with "• "."""
 
@@ -119,7 +122,13 @@ Format: exactly 3 bullet points, each starting with "• "."""
             return None
 
     def _build_system_prompt(self) -> str:
-        """Build system prompt, prepending interview context if available."""
+        """Build system prompt with interview context and tone."""
+        tone_prompts = {
+            "formal": "\n\nTone: Formal and professional. Use precise business and technical language. Structured, measured — no contractions or casual phrasing.",
+            "confident": "\n\nTone: Bold and confident. Lead with strong impact statements. Own achievements without hedging. Use decisive, assertive language.",
+            "warm": "\n\nTone: Warm and personable. Tell micro-stories that show genuine passion. Show collaboration and human connection alongside technical strength.",
+            "technical": "\n\nTone: Deeply technical. Use specific algorithms, time/space complexity, architecture patterns, framework internals, and performance metrics. Impress a senior engineer.",
+        }
         try:
             from pathlib import Path
             cfg_path = Path(__file__).parent / "identity" / "session_config.json"
@@ -127,12 +136,16 @@ Format: exactly 3 bullet points, each starting with "• "."""
                 import json as _json
                 with open(cfg_path) as f:
                     cfg = _json.load(f)
+                prompt = self.IDENTITY_PROMPT
                 interview_for = cfg.get("interview_for", "")
                 if interview_for:
-                    return f"This candidate is interviewing for: {interview_for}\n\n{self.IDENTITY_PROMPT}"
+                    prompt = f"This candidate is interviewing for: {interview_for}\n\n{prompt}"
+                tone = cfg.get("tone", "confident")
+                prompt += tone_prompts.get(tone, tone_prompts["confident"])
+                return prompt
         except Exception:
             pass
-        return self.IDENTITY_PROMPT
+        return self.IDENTITY_PROMPT + tone_prompts["confident"]
 
     def _format_context(self, context: List[Dict]) -> str:
         """Format context items into readable text"""
@@ -196,6 +209,23 @@ Relevant history from your documents:
     def get_stats(self) -> Dict:
         """Get generation statistics"""
         return self.stats.copy()
+
+    def generate_followup(self, question: str, answers: list) -> str:
+        """Predict the most likely follow-up question the interviewer will ask."""
+        try:
+            answer_text = " ".join(answers[:3])
+            response = openai.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an experienced technical interviewer. Given the question asked and the candidate's answer, predict the single most likely follow-up question. Be specific and realistic. Respond with just the question itself — no preamble, no quotes."},
+                    {"role": "user", "content": f"Question asked: {question}\nCandidate answered: {answer_text}"}
+                ],
+                max_tokens=60,
+                temperature=0.6,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception:
+            return ""
 
     def print_stats(self):
         """Print statistics"""

@@ -275,6 +275,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 .nav-btn{font-size:.75rem;padding:5px 12px;border-radius:6px;background:#1e1e1e;color:#888;text-decoration:none;border:1px solid #2a2a2a}
 .nav-btn:hover{background:#2a2a2a;color:#ccc}
+.tone-bar{background:#0d0d0d;border-bottom:1px solid #161616;padding:7px 14px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+.tone-lbl{font-size:.65rem;color:#3a3a3a;text-transform:uppercase;letter-spacing:.1em;margin-right:2px}
+.tbtn{font-size:.72rem;padding:3px 11px;border-radius:20px;border:1px solid #222;background:transparent;color:#444;cursor:pointer;transition:all .15s}
+.tbtn:hover{color:#aaa;border-color:#444}
+.tbtn.active[data-t=confident]{background:#0a1a0a;color:#4ade80;border-color:#166534}
+.tbtn.active[data-t=formal]{background:#0a0f1e;color:#60a5fa;border-color:#1e3a8a}
+.tbtn.active[data-t=warm]{background:#1e0a00;color:#fb923c;border-color:#7c2d12}
+.tbtn.active[data-t=technical]{background:#120a1e;color:#a78bfa;border-color:#4c1d95}
+.copy-btn{font-size:.68rem;padding:2px 8px;border-radius:4px;border:1px solid #2a2a2a;background:transparent;color:#555;cursor:pointer;float:right;transition:all .2s}
+.copy-btn:hover{color:#aaa;border-color:#555}
+.followup{margin:8px 16px 14px;padding:10px 14px;background:#0f0a00;border:1px solid #2a2000;border-radius:8px;animation:fadeIn .3s}
+.fq-lbl{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#78350f;margin-bottom:4px}
+.fq-text{font-size:.84rem;color:#d97706;line-height:1.4}
 .feed{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
 .feed::-webkit-scrollbar{width:3px}
 .feed::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
@@ -315,6 +328,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <a href="/setup" class="nav-btn" onclick="resetSetup(event)">⚙ Setup</a>
   <button class="nav-btn" onclick="quit()" style="background:#2a0a0a;color:#f87171;border-color:#4a1a1a">✕ Quit</button>
 </div>
+<div class="tone-bar">
+  <span class="tone-lbl">Tone</span>
+  <button class="tbtn" data-t="confident" onclick="setTone(this)">Confident</button>
+  <button class="tbtn" data-t="formal" onclick="setTone(this)">Formal</button>
+  <button class="tbtn" data-t="warm" onclick="setTone(this)">Warm</button>
+  <button class="tbtn" data-t="technical" onclick="setTone(this)">Technical</button>
+</div>
 <div class="feed" id="feed">
   <div class="welcome" id="welcome">
     <div class="icon">🎤</div>
@@ -349,7 +369,8 @@ es.onmessage=e=>{
   if(type==='question'){
     liveBar.classList.remove('on');liveText.textContent='';rmWelcome();
     card=document.createElement('div');card.className='qa-card';
-    card.innerHTML=`<div class="qa-q"><div class="qa-lbl ql">❓ Interviewer</div><div class="qa-q-text">${esc(data)}</div></div><div class="qa-a"><div class="qa-lbl al">💬 Say this</div><div class="generating"><div class="dots"><span></span><span></span><span></span></div>Generating...</div></div>`;
+    card.dataset.q=data;
+    card.innerHTML=`<div class="qa-q"><div class="qa-lbl ql">❓ Interviewer</div><div class="qa-q-text">${esc(data)}</div></div><div class="qa-a"><div class="qa-lbl al" style="display:flex;align-items:center;justify-content:space-between">💬 Say this<button class="copy-btn" onclick="copyAnswers(this)">📋 Copy</button></div><div class="generating"><div class="dots"><span></span><span></span><span></span></div>Generating...</div></div>`;
     feed.appendChild(card);scroll();
   }
   if(type==='answer'&&card){
@@ -359,10 +380,36 @@ es.onmessage=e=>{
     row.innerHTML=`<span class="adot">•</span><span>${esc(data)}</span>`;
     a.appendChild(row);scroll();
   }
+  if(type==='followup'&&card){
+    // remove old followup if any
+    const old=card.querySelector('.followup');if(old)old.remove();
+    const fq=document.createElement('div');fq.className='followup';
+    fq.innerHTML=`<div class="fq-lbl">🔮 They might ask next</div><div class="fq-text">${esc(data)}</div>`;
+    card.appendChild(fq);scroll();
+  }
 };
 es.onerror=()=>{pill.textContent='Reconnecting...';pill.className='status-pill'};
 async function quit(){if(!confirm('Stop the interview assistant?'))return;await fetch('/quit',{method:'POST'});window.close()}
 async function resetSetup(e){e.preventDefault();await fetch('/api/reset-setup',{method:'POST'});window.location.href='/setup';}
+function copyAnswers(btn){
+  const rows=[...btn.closest('.qa-card').querySelectorAll('.answer-row span:last-child')].map(s=>s.textContent);
+  navigator.clipboard.writeText(rows.map((r,i)=>`${i+1}. ${r}`).join('\n'));
+  btn.textContent='✓ Copied';setTimeout(()=>btn.textContent='📋 Copy',2000);
+}
+function setTone(btn){
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  fetch('/api/tone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tone:btn.dataset.t})});
+  localStorage.setItem('itone',btn.dataset.t);
+}
+// restore tone on load
+(()=>{
+  fetch('/api/session-config').then(r=>r.json()).then(cfg=>{
+    const t=cfg.tone||localStorage.getItem('itone')||'confident';
+    const b=document.querySelector(`.tbtn[data-t="${t}"]`);
+    if(b){document.querySelectorAll('.tbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');}
+  });
+})();
 </script>
 </body>
 </html>"""
@@ -715,6 +762,14 @@ def api_setup():
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+@app.route("/api/tone", methods=["POST"])
+def set_tone():
+    tone = (request.get_json() or {}).get("tone", "confident")
+    cfg = get_session_config() or {}
+    cfg["tone"] = tone
+    save_session_config(cfg)
+    return jsonify({"ok": True})
 
 @app.route("/api/session-config")
 def session_config():

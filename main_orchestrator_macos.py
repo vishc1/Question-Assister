@@ -263,6 +263,12 @@ class MainOrchestratorMacOS:
                 self.stats["responses"] += 1
                 for r in response:
                     self.overlay.show_answer_bullet(r)
+                # Generate follow-up prediction
+                followup = await loop.run_in_executor(
+                    None, self.response_generator.generate_followup, transcript, response
+                )
+                if followup:
+                    self.overlay._broadcast("followup", followup)
 
             self.overlay.update_status("Listening...")
 
