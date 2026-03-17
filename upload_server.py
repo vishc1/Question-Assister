@@ -283,6 +283,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tbtn.active[data-t=formal]{background:#0a0f1e;color:#60a5fa;border-color:#1e3a8a}
 .tbtn.active[data-t=warm]{background:#1e0a00;color:#fb923c;border-color:#7c2d12}
 .tbtn.active[data-t=technical]{background:#120a1e;color:#a78bfa;border-color:#4c1d95}
+.tbtn.active[data-t=sales]{background:#1e0a1e;color:#f472b6;border-color:#831843}
 .copy-btn{font-size:.68rem;padding:2px 8px;border-radius:4px;border:1px solid #2a2a2a;background:transparent;color:#555;cursor:pointer;float:right;transition:all .2s}
 .copy-btn:hover{color:#aaa;border-color:#555}
 .followup{margin:8px 16px 14px;padding:10px 14px;background:#0f0a00;border:1px solid #2a2000;border-radius:8px;animation:fadeIn .3s}
@@ -334,6 +335,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="tbtn" data-t="formal" onclick="setTone(this)">Formal</button>
   <button class="tbtn" data-t="warm" onclick="setTone(this)">Warm</button>
   <button class="tbtn" data-t="technical" onclick="setTone(this)">Technical</button>
+  <button class="tbtn" data-t="sales" onclick="setTone(this)">Sales Pitch</button>
 </div>
 <div class="feed" id="feed">
   <div class="welcome" id="welcome">

@@ -128,6 +128,7 @@ Format: exactly 3 bullet points, each starting with "• "."""
             "confident": "\n\nTone: Bold and confident. Lead with strong impact statements. Own achievements without hedging. Use decisive, assertive language.",
             "warm": "\n\nTone: Warm and personable. Tell micro-stories that show genuine passion. Show collaboration and human connection alongside technical strength.",
             "technical": "\n\nTone: Deeply technical. Use specific algorithms, time/space complexity, architecture patterns, framework internals, and performance metrics. Impress a senior engineer.",
+            "sales": "\n\nTone: Sales pitch energy. Every bullet should make the interviewer feel they'd be missing out by not hiring this candidate. Lead with outcomes and impact numbers. Build excitement. Think: 'I don't just do the job — I transform it.' Persuasive, memorable, close the deal.",
         }
         try:
             from pathlib import Path
